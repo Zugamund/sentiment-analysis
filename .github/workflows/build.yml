@@ -7,6 +7,18 @@ on:
   workflow_dispatch:
 
 jobs:
+  create-folder:
+    name: create-folder
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create folder on remote VM
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+          port: ${{ secrets.PORT }}
+          script: whoami
   build:
     runs-on: ubuntu-latest
 

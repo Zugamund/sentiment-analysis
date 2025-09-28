@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
+
   create-folder:
     name: create-folder
     runs-on: ubuntu-latest
@@ -20,10 +21,10 @@ jobs:
           key:      ${{ secrets.PRIVATE_KEY }}
           script: |
             set -e
-            mkdir -p /opt/myapp
+            sudo mkdir -p /opt/myapp
             # Si un run précédent a créé un DOSSIER "app.jar", on le supprime
             if [ -d /opt/myapp/app.jar ]; then
-              rm -rf /opt/myapp/app.jar
+              sudo rm -rf /opt/myapp/app.jar
             fi
 
   build-and-deploy:
@@ -61,7 +62,7 @@ jobs:
           key:        ${{ secrets.PRIVATE_KEY }}
           source:     "app.jar"        # fichier local
           target:     "/opt/myapp"     # dossier distant (pas /opt/myapp/app.jar)
-          overwrite:  true             # écraser si le fichier existe
+          overwrite:  true
           rm:         false
 
       - name: Verify file on VPS
@@ -76,10 +77,71 @@ jobs:
             echo "== ls =="
             ls -l /opt/myapp/
             echo "== file =="
-            file /opt/myapp/app.jar || true
-            echo "== jar tf =="
+            if [ -f /opt/myapp/app.jar ]; then
+              file /opt/myapp/app.jar || true
+            else
+              echo "app.jar introuvable !" ; exit 1
+            fi
+            echo "== jar tf (si jar dispo) =="
             if command -v jar >/dev/null 2>&1; then
               jar tf /opt/myapp/app.jar | head -n 20
             else
               echo "La commande 'jar' n'est pas disponible sur le VPS."
             fi
+
+      # ---------- Déploiement comme service systemd (idempotent) ----------
+      - name: Deploy & restart systemd service (myapp)
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host:     ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          port:     ${{ secrets.PORT }}
+          key:      ${{ secrets.PRIVATE_KEY }}
+          script: |
+            set -e
+
+            SERVICE_NAME="myapp"
+            JAR_PATH="/opt/myapp/app.jar"
+            RUNTIME_USER="myapp"
+            RUNTIME_GROUP="myapp"
+
+            # 1) Créer un user système dédié si absent (sans shell de login)
+            if ! id -u "$RUNTIME_USER" >/dev/null 2>&1; then
+              sudo useradd --system --home /opt/myapp --no-create-home --shell /usr/sbin/nologin "$RUNTIME_USER"
+            fi
+
+            # 2) Droits sur le jar
+            if [ -f "$JAR_PATH" ]; then
+              sudo chown "$RUNTIME_USER:$RUNTIME_GROUP" "$JAR_PATH" || sudo chown "$RUNTIME_USER:$RUNTIME_USER" "$JAR_PATH" || true
+              sudo chmod 0644 "$JAR_PATH"
+            else
+              echo "Jar manquant: $JAR_PATH" ; exit 1
+            fi
+
+            # 3) Unit file systemd idempotent
+            UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+            sudo bash -c "cat > \"$UNIT_FILE\" <<'EOF'
+            [Unit]
+            Description=My Spring Boot App (myapp)
+            After=network.target
+
+            [Service]
+            Type=simple
+            WorkingDirectory=/opt/myapp
+            ExecStart=/usr/bin/java -jar /opt/myapp/app.jar
+            Restart=always
+            RestartSec=5
+            User=myapp
+            Group=myapp
+            Environment=JAVA_TOOL_OPTIONS=-XX:+UseContainerSupport
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF"
+
+            # 4) systemd: recharger, activer, redémarrer, vérifier
+            sudo systemctl daemon-reload
+            sudo systemctl enable "$SERVICE_NAME"
+            sudo systemctl restart "$SERVICE_NAME"
+            sleep 1
+            sudo systemctl is-active --quiet "$SERVICE_NAME" && echo "Service OK" || (sudo journalctl -u "$SERVICE_NAME" -n 50 --no-pager ; exit 1)

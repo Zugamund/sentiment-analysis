@@ -59,10 +59,10 @@ jobs:
           username:   ${{ secrets.USERNAME }}
           port:       ${{ secrets.PORT }}
           key:        ${{ secrets.PRIVATE_KEY }}
-          source:     "app.jar"        # ← fichier local
-          target:     "/opt/myapp"     # ← dossier distant (PAS /opt/myapp/app.jar)
-          overwrite:  true             # ← écraser si le fichier existe
-          rm:         false            # (on a déjà nettoyé au besoin)
+          source:     "app.jar"        # fichier local
+          target:     "/opt/myapp"     # dossier distant (pas /opt/myapp/app.jar)
+          overwrite:  true             # écraser si le fichier existe
+          rm:         false
 
       - name: Verify file on VPS
         uses: appleboy/ssh-action@v1.0.0
@@ -76,7 +76,7 @@ jobs:
             echo "== ls =="
             ls -l /opt/myapp/
             echo "== file =="
-            file /opt/myapp/app.jar
+            file /opt/myapp/app.jar || true
             echo "== jar tf =="
             if command -v jar >/dev/null 2>&1; then
               jar tf /opt/myapp/app.jar | head -n 20

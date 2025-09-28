@@ -52,8 +52,8 @@ jobs:
           username: ${{ secrets.USERNAME }}
           port:     ${{ secrets.PORT }}
           key:      ${{ secrets.PRIVATE_KEY }}
-          source:   "app.jar"           # fichier direct, pas target/...
-          target:   "/opt/myapp/app.jar" # chemin final exact
+          source:   "app.jar"
+          target:   "/opt/myapp/"
 
       - name: Verify file on VPS
         uses: appleboy/ssh-action@v1.0.0
@@ -64,3 +64,5 @@ jobs:
           key:      ${{ secrets.PRIVATE_KEY }}
           script: |
             ls -lh /opt/myapp/app.jar
+            file /opt/myapp/app.jar
+            jar tf /opt/myapp/app.jar | head -n 20
